@@ -2,6 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#123b2a"><meta name="app-version" content="2026.11.06.1">
+<link rel="manifest" href="./manifest.json">
 <title>قرآن کریم</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
@@ -313,7 +314,7 @@ function init(){load();loadTasbih();document.body.classList.toggle('dark',state.
 // ثبت سرویس‌ورکر: ذخیره پوسته سایت و متن‌های دریافت‌شده برای بازشدن آفلاین.
 if('serviceWorker' in navigator){
     window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('Service worker:',err));
+        navigator.serviceWorker.register('./service-worker.js').catch(err=>console.warn('Service worker:',err));
     });
 }
  document.addEventListener('DOMContentLoaded',init);
