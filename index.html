@@ -118,22 +118,18 @@ async function findTafsirKey(){if(tafsirKey)return;try{let list=await getJSON('h
 async function loadTafsir(a){let el=document.getElementById('tf_'+a);if(!el)return;el.textContent='در حال دریافت تفسیر...';try{await findTafsirKey();if(!tafsirKey)throw Error('no tafsir');let j=await getJSON('https://quranenc.com/api/v1/tafsir/aya/'+tafsirKey+'/'+state.surah+'/'+a);let blocks=Array.isArray(j)?j:(j.result||j.data||[]);let text=blocks.map(x=>x.text||'').filter(Boolean).join('\n\n');el.textContent=text||'برای این آیه متن تفسیری جداگانه‌ای در سرویس موجود نیست.';let small=document.createElement('small');small.textContent='منبع: '+tafsirTitle+' · QuranEnc';el.appendChild(small);el.dataset.loaded='1'}catch(e){el.textContent='تفسیر فارسی از منبع انتخاب‌شده در دسترس نیست. برای جلوگیری از نسبت نادرست، متن جایگزین ساخته نشده است.'}}
 function toggleAllTranslations(){document.querySelectorAll('.translation').forEach(x=>x.classList.toggle('show'))}function toggleAllTafsirs(){document.querySelectorAll('.tafsir').forEach(x=>x.classList.toggle('show'))}
 function globalAyah(local){let a=ayahs.find(x=>x.numberInSurah===local);return a?a.number:1}
-function audioURL(local,reciter=state.reciter){let global=globalAyah(local),bitrate=RECITER_BITRATES[reciter]||128;return 'https://cdn.islamic.network/quran/audio/'+bitrate+'/'+reciter+'/'+global+'.mp3'}
-// آدرس صوت قاریان از الگوی رسمی CDN ساخته می‌شود؛ شناسه‌ها باید دقیقاً مطابق edition باشند.
-const audioEditionCache={};
-async function getAudioEditionUrls(reciter=state.reciter){
-    const cacheKey=state.surah+'_'+reciter;
-    if(audioEditionCache[cacheKey])return audioEditionCache[cacheKey];
-    if(!RECITER_BITRATES[reciter])throw Error('شناسه صوتی این قاری معتبر نیست.');
-    const urls={};
-    ayahs.forEach(a=>{urls[a.number]='https://cdn.islamic.network/quran/audio/'+RECITER_BITRATES[reciter]+'/'+reciter+'/'+a.number+'.mp3'});
-    audioEditionCache[cacheKey]=urls;
-    return urls;
-}
+const QURAN_API_RECITER_IDS={'ar.alafasy':1};
+const ayahAudioUrlCache={};
 async function getAyahAudioUrl(local,reciter=state.reciter){
-    const global=globalAyah(local);
-    try{const urls=await getAudioEditionUrls(reciter);if(urls[global])return urls[global];}catch(e){console.warn('Audio edition API fallback:',e)}
-    return audioURL(local,reciter);
+ const global=globalAyah(local);
+ if(!QURAN_API_RECITER_IDS[reciter])throw Error('برای این قاری منبع مطمئن صوت جداگانه در دسترس نیست؛ مشاری العفاسی را انتخاب کنید.');
+ const cacheKey=state.surah+'_'+local+'_'+reciter;
+ if(ayahAudioUrlCache[cacheKey])return ayahAudioUrlCache[cacheKey];
+ const response=await getJSON('https://quranapi.pages.dev/api/audio/'+state.surah+'/'+local+'.json');
+ const item=response[String(QURAN_API_RECITER_IDS[reciter])];
+ if(!item||!item.url)throw Error('نشانی صوت این آیه در منبع جایگزین موجود نیست.');
+ ayahAudioUrlCache[cacheKey]=item.url;
+ return item.url;
 }
 const AUDIO_DB='quran_audio_store_v1';let audioDbPromise=null;
 function openAudioDB(){if(!('indexedDB' in window))return Promise.reject(Error('ذخیره‌سازی این مرورگر پشتیبانی نمی‌شود'));if(!audioDbPromise)audioDbPromise=new Promise((resolve,reject)=>{let req=indexedDB.open(AUDIO_DB,1);req.onupgradeneeded=()=>{let db=req.result;if(!db.objectStoreNames.contains('tracks'))db.createObjectStore('tracks')};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});return audioDbPromise}
@@ -170,7 +166,7 @@ async function getFullSurahAudioURL(reciter,surah=state.surah){
  return read.server.replace(/\/$/,'/')+String(surah).padStart(3,'0')+'.mp3';
 }
 function closeReciterPicker(){document.getElementById('reciterPicker').classList.add('hidden')}
-async function reciterDownloaded(reciter){try{return !!(await getSavedAudio(surahTrackKey(reciter)))}catch(e){return false}}
+async function reciterDownloaded(reciter){try{if(!ayahs.length)return false;for(const a of ayahs){if(!(await getSavedAudio(trackKey(reciter,a.number))))return false;}return true}catch(e){return false}}
 async function reciterProgress(reciter){return (await reciterDownloaded(reciter))?100:0}
 async function openReciterPicker(){
   document.getElementById('audioPlayer').classList.remove('collapsed');
@@ -233,36 +229,36 @@ async function fetchFullSurahBlob(url,onProgress){
  throw Error('دریافت فایل کامل سوره ناموفق بود. '+(lastError?.message||'خطای شبکه'));
 }
 async function startReciterDownload(reciter){
- if(!ayahs.length)return;state.reciter=reciter;save();const setting=document.getElementById('reciter');if(setting)setting.value=reciter;updatePlayer();
+ if(!ayahs.length)return;
+ if(!QURAN_API_RECITER_IDS[reciter]){toast('برای دانلود و پخش تک‌آیه‌ای، فعلاً قاری مشاری العفاسی را انتخاب کنید.');return;}
+ state.reciter=reciter;save();const setting=document.getElementById('reciter');if(setting)setting.value=reciter;updatePlayer();
  const btn=document.getElementById('downloadSurahBtn'),status=document.getElementById('downloadStatus'),complete=document.getElementById('downloadComplete'),wrap=document.getElementById('downloadProgressWrap'),fill=document.getElementById('downloadProgressFill'),playBtn=await ensureOfflineButton();
  document.getElementById('audioPlayer').classList.remove('collapsed');btn.disabled=true;complete.classList.add('hidden');status.classList.remove('hidden');wrap.classList.remove('hidden');playBtn.classList.add('hidden');fill.style.width='0%';wrap.classList.remove('indeterminate');
  try{
-  const url=await getFullSurahAudioURL(reciter,state.surah);
-  status.textContent='در حال اتصال به سرور صوت '+RECITERS[reciter]+'...';
-  const blob=await fetchFullSurahBlob(url,(received,total)=>{
-   if(total>0){const percent=Math.min(99,Math.floor(received/total*100));fill.style.width=percent+'%';status.textContent='در حال دانلود '+RECITERS[reciter]+' — '+fa(percent)+'٪ ('+fa((received/1048576).toFixed(2))+' از '+fa((total/1048576).toFixed(2))+' مگابایت)';wrap.classList.remove('indeterminate');}
-   else{fill.style.width='35%';wrap.classList.add('indeterminate');status.textContent='در حال دریافت '+RECITERS[reciter]+' — '+fa((received/1048576).toFixed(2))+' مگابایت دریافت شده؛ سرور حجم کل را اعلام نکرده است.';}
-  });
-  await saveAudio(surahTrackKey(reciter),blob);
-  fill.style.width='100%';wrap.classList.remove('indeterminate');wrap.classList.add('hidden');status.classList.add('hidden');complete.textContent='✅ دانلود شد؛ فایل کامل سوره با حجم '+fa((blob.size/1048576).toFixed(2))+' مگابایت ذخیره شد.';complete.classList.remove('hidden');playBtn.classList.remove('hidden');btn.classList.add('hidden');document.getElementById('downloadAnotherReciterBtn').classList.remove('hidden');toast('دانلود کامل شد ❤️');
- }catch(error){console.error(error);wrap.classList.remove('indeterminate');wrap.classList.remove('hidden');status.classList.remove('hidden');status.textContent='دانلود کامل نشد: '+(error&&error.message?error.message:'خطای شبکه')+'؛ اینترنت را بررسی کنید یا بعداً دوباره تلاش کنید.';btn.classList.remove('hidden');document.getElementById('downloadAnotherReciterBtn').classList.add('hidden');btn.textContent='⬇️ تلاش دوباره';toast('دانلود کامل نشد.');}
+  let saved=0;
+  for(let i=0;i<ayahs.length;i++){
+   const ayah=ayahs[i],key=trackKey(reciter,ayah.number);let blob=await getSavedAudio(key);
+   if(!blob){const url=await getAyahAudioUrl(ayah.numberInSurah,reciter);blob=await fetchFullSurahBlob(url,()=>{});await saveAudio(key,blob);}
+   saved++;const pct=Math.floor(saved/ayahs.length*100);fill.style.width=pct+'%';status.textContent='دانلود صوت آیه '+fa(ayah.numberInSurah)+' از '+fa(ayahs.length)+' — '+fa(pct)+'٪';
+  }
+  wrap.classList.add('hidden');status.classList.add('hidden');complete.textContent='✅ صوت تک‌تک آیات ذخیره شد؛ اکنون با لمس شماره هر آیه همان آیه پخش می‌شود.';complete.classList.remove('hidden');playBtn.classList.remove('hidden');btn.classList.add('hidden');document.getElementById('downloadAnotherReciterBtn').classList.remove('hidden');toast('دانلود صوت آیات کامل شد ❤️');
+ }catch(error){console.error(error);wrap.classList.remove('hidden');status.classList.remove('hidden');status.textContent='دانلود آیه '+(saved+1)+' ناموفق بود: '+(error&&error.message?error.message:'خطای شبکه')+'؛ آیات دانلودشده حفظ شده‌اند.';btn.classList.remove('hidden');document.getElementById('downloadAnotherReciterBtn').classList.add('hidden');btn.textContent='⬇️ ادامه دانلود آیات';toast('دانلود کامل نشد.');}
  finally{btn.disabled=false;}
 }
 async function playDownloadedSurah(){
- if(!ayahs.length){toast('ابتدا سوره را باز کنید.');return;}
- try{const blob=await getSavedAudio(surahTrackKey(state.reciter));if(!blob){toast('ابتدا صوت کامل این سوره را دانلود کنید.');return;}toast('پخش آفلاین آغاز شد ❤️');playWholeSurah(URL.createObjectURL(blob));}catch(error){toast('خواندن فایل ذخیره‌شده ممکن نشد.');}
+ if(!ayahs.length){toast('ابتدا یک سوره را باز کنید.');return;}
+ const blob=await getSavedAudio(trackKey(state.reciter,globalAyah(state.current)));
+ if(!blob){toast('صوت این آیه هنوز دانلود نشده است.');return;}
+ playAyah(state.current);
 }
 async function getAudioSource(local){let global=globalAyah(local);try{let blob=await getSavedAudio(trackKey(state.reciter,global));if(blob)return URL.createObjectURL(blob)}catch(e){}return await getAyahAudioUrl(local,state.reciter)}
 async function playWholeSurah(src,continuation=false){if(!continuation)surahRepeatProgress=1;const token=++requestNo;if(audio){audio.pause();audio=null;}state.current=1;state.lastGlobal=globalAyah(1);state.playing=true;save();updatePlayer();highlight(1);const a=new Audio(src);audio=a;a.playbackRate=state.speed;a.onended=()=>{if(audio!==a||token!==requestNo)return;if(state.repeatMode==='surah'&&surahRepeatProgress<state.repeatCount){surahRepeatProgress++;a.currentTime=0;a.play().catch(()=>{stopAudio();toast('تکرار سوره ممکن نشد.')});return;}if(a.src.startsWith('blob:'))URL.revokeObjectURL(a.src);stopAudio();toast('پایان سوره ❤️')};a.onerror=()=>{if(audio===a){stopAudio();toast('پخش فایل کامل سوره ممکن نشد.')}};a.play().then(()=>document.getElementById('playBtn').textContent='⏸').catch(()=>toast('برای پخش دوباره تلاش کنید.'));}
 async function playAyah(n,continuation=false){
  if(n<1||n>ayahs.length)return;
  if(!continuation){ayahRepeatProgress=1;surahRepeatProgress=1;}
- // فایل کامل آفلاین برای تکرار آیه کافی نیست؛ در این حالت از فایل تک‌آیه‌ای استفاده می‌کنیم.
- if(state.repeatMode!=='ayah'){
-  let fullBlob=null;try{fullBlob=await getSavedAudio(surahTrackKey(state.reciter));}catch(e){}
-  if(fullBlob){toast('فایل کامل سوره از حافظه پخش می‌شود.');playWholeSurah(URL.createObjectURL(fullBlob));return;}
- }
+ // لمس آیه فقط فایل همان آیه را پخش می‌کند؛ فایل کامل سوره به‌جای آن پخش نمی‌شود.
  if(state.reciter==='mansour.fullsurah'){
+  toast('این قاری فقط فایل کامل سوره دارد؛ برای پخش جداگانه آیه، مشاری العفاسی را انتخاب و صوت آیات را دانلود کنید.');return;
   const src='https://cdn.mp3quran.net/audio/mansour-salimi/r1/'+String(state.surah).padStart(3,'0')+'.mp3';
   if(state.repeatMode==='ayah')toast('این قاری فایل جداگانهٔ هر آیه ندارد؛ تلاوت کامل سوره پخش می‌شود.');
   else toast('تلاوت منصور السالمی به‌صورت کاملِ سوره پخش می‌شود.');
