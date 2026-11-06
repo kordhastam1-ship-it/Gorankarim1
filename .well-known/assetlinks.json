@@ -4,7 +4,7 @@
       "delegate_permission/common.handle_all_urls"
     ],
     "target": {
-      "namespace": "android_app",
+      "namespace": "cafebazaar_twa",
       "package_name": "io.github.kordhastam1_ship_it.twa",
       "sha256_cert_fingerprints": [
         "0A:62:36:CD:84:D9:F1:80:7F:38:C2:07:77:BD:E4:46:2F:7A:1F:AB:4A:A3:2E:90:90:1D:0A:AB:B7:8D:84:83"
